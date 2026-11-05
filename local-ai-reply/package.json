@@ -1,0 +1,22 @@
+{
+  "name": "waha-local-ai-reply",
+  "version": "1.0.0",
+  "scripts": {
+    "start": "bun run server.ts",
+    "typecheck": "bunx tsc --noEmit",
+    "test": "bun test"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "Apache-2.0",
+  "description": "WhatsApp AI replies with shared Redis conversation memory",
+  "type": "module",
+  "private": true,
+  "dependencies": {
+    "ioredis": "^5"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "typescript": "^7.0.2"
+  }
+}
