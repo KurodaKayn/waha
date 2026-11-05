@@ -2,8 +2,9 @@
   "name": "waha-local-ai-reply",
   "version": "1.0.0",
   "scripts": {
-    "test": "node --test test/*.test.mjs",
-    "start": "node server.mjs"
+    "start": "bun run server.ts",
+    "typecheck": "bunx tsc --noEmit",
+    "test": "bun test"
   },
   "keywords": [],
   "author": "",
@@ -12,6 +13,10 @@
   "type": "module",
   "private": true,
   "dependencies": {
-    "ioredis": "^5.11.1"
+    "ioredis": "^5"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "typescript": "^7.0.2"
   }
 }

@@ -1,10 +1,9 @@
-FROM node:22-alpine
+FROM oven/bun:1.3-alpine
 
 WORKDIR /app
-COPY package.json package-lock.json ./
-RUN npm ci --omit=dev --ignore-scripts
-COPY server.mjs redis-memory.mjs ./
+COPY package.json bun.lock ./
+RUN bun install --frozen-lockfile --production
+COPY server.ts redis-memory.ts ./
 
-USER node
 EXPOSE 3001
-CMD ["node", "server.mjs"]
+CMD ["bun", "run", "server.ts"]

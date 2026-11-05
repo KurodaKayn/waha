@@ -1,6 +1,24 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
-import { createServer } from 'node:http';
-import { RedisMemory } from './redis-memory.mjs';
+import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
+import { RedisMemory, type ChatMessage } from './redis-memory';
+
+type WahaMessage = {
+  from?: string;
+  fromMe?: boolean;
+  body?: string;
+};
+
+type WahaEvent = {
+  id?: string;
+  event?: string;
+  timestamp?: number;
+  payload?: WahaMessage;
+};
+
+type LlmResponse = {
+  error?: { message?: string };
+  choices?: Array<{ message?: { content?: string } }>;
+};
 
 const port = Number(process.env.PORT ?? 3001);
 const wahaUrl = required('WAHA_URL').replace(/\/$/, '');
@@ -26,7 +44,7 @@ const memory = new RedisMemory({
 });
 const maxBodyBytes = 1_000_000;
 
-function required(name) {
+function required(name: string): string {
   const value = process.env[name];
   if (!value) {
     throw new Error(`${name} is required`);
@@ -34,7 +52,7 @@ function required(name) {
   return value;
 }
 
-function positiveInteger(name, fallback) {
+function positiveInteger(name: string, fallback: number): number {
   const value = Number(process.env[name] ?? fallback);
   if (!Number.isSafeInteger(value) || value <= 0) {
     throw new Error(`${name} must be a positive integer`);
@@ -42,8 +60,8 @@ function positiveInteger(name, fallback) {
   return value;
 }
 
-function validSignature(rawBody, receivedSignature) {
-  if (!receivedSignature) {
+function validSignature(rawBody: Buffer, receivedSignature: string | string[] | undefined): boolean {
+  if (!receivedSignature || Array.isArray(receivedSignature)) {
     return false;
   }
   const expectedSignature = createHmac('sha512', webhookSecret)
@@ -54,7 +72,7 @@ function validSignature(rawBody, receivedSignature) {
   return received.length === expected.length && timingSafeEqual(received, expected);
 }
 
-function replyChatId(message) {
+function replyChatId(message: WahaMessage | undefined): string | null {
   const id = message?.from;
   if (typeof id !== 'string') {
     return null;
@@ -68,7 +86,7 @@ function replyChatId(message) {
   return null;
 }
 
-function ignoreReason(event) {
+function ignoreReason(event: WahaEvent): string | null {
   const message = event.payload;
   if (event.event !== 'message') {
     return 'unsupported event';
@@ -85,7 +103,7 @@ function ignoreReason(event) {
   return null;
 }
 
-async function generateReply(history, body) {
+async function generateReply(history: ChatMessage[], body: string): Promise<string> {
   const messages = [
     { role: 'system', content: systemPrompt },
     ...history,
@@ -103,7 +121,7 @@ async function generateReply(history, body) {
       temperature: 0.7,
     }),
   });
-  const result = await response.json();
+  const result = await response.json() as LlmResponse;
   if (!response.ok) {
     throw new Error(`LLM request failed: ${result.error?.message ?? response.status}`);
   }
@@ -114,7 +132,7 @@ async function generateReply(history, body) {
   return content.trim();
 }
 
-async function sendWhatsAppReply(chatId, text) {
+async function sendWhatsAppReply(chatId: string, text: string): Promise<void> {
   const response = await fetch(`${wahaUrl}/api/sendText`, {
     method: 'POST',
     headers: {
@@ -129,14 +147,17 @@ async function sendWhatsAppReply(chatId, text) {
   }
 }
 
-async function handleEvent(event) {
+async function handleEvent(event: WahaEvent): Promise<void> {
   const reason = ignoreReason(event);
   if (reason) {
     console.log(`Ignored event ${event.id}: ${reason}`);
     return;
   }
   const chatId = replyChatId(event.payload);
-  const body = event.payload.body.trim();
+  if (!chatId) {
+    return;
+  }
+  const body = event.payload?.body?.trim() ?? '';
   const eventId = typeof event.id === 'string' && event.id.length > 0
     ? event.id
     : `${chatId}:${event.timestamp ?? ''}:${body}`;
@@ -161,12 +182,12 @@ async function handleEvent(event) {
   }
 }
 
-function sendJson(response, statusCode, value) {
+function sendJson(response: ServerResponse, statusCode: number, value: unknown): void {
   response.writeHead(statusCode, { 'Content-Type': 'application/json' });
   response.end(JSON.stringify(value));
 }
 
-const server = createServer((request, response) => {
+const server = createServer((request: IncomingMessage, response: ServerResponse) => {
   if (request.method === 'GET' && request.url === '/healthz') {
     memory.healthy().then(function () {
       sendJson(response, 200, { status: 'ok', redis: 'ok' });
@@ -180,9 +201,9 @@ const server = createServer((request, response) => {
     return;
   }
 
-  const chunks = [];
+  const chunks: Buffer[] = [];
   let receivedBytes = 0;
-  request.on('data', (chunk) => {
+  request.on('data', (chunk: Buffer) => {
     receivedBytes += chunk.length;
     if (receivedBytes > maxBodyBytes) {
       request.destroy();
@@ -199,7 +220,7 @@ const server = createServer((request, response) => {
 
     let event;
     try {
-      event = JSON.parse(rawBody.toString('utf8'));
+      event = JSON.parse(rawBody.toString('utf8')) as WahaEvent;
     } catch {
       sendJson(response, 400, { error: 'Invalid JSON' });
       return;
@@ -217,8 +238,8 @@ const server = createServer((request, response) => {
 
 async function start() {
   await memory.connect();
-  await new Promise(function (resolve) {
-    server.listen(port, '0.0.0.0', resolve);
+  await new Promise<void>(function (resolve: () => void) {
+    server.listen({ port: port, host: '0.0.0.0' }, resolve);
   });
   console.log(`WAHA AI reply service listening on port ${port}`);
 }

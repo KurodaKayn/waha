@@ -1,6 +1,30 @@
 import { createHash, randomUUID } from 'node:crypto';
 import Redis from 'ioredis';
 
+export type ChatMessage = {
+  role: 'user' | 'assistant';
+  content: string;
+};
+
+export type ConversationClaim = {
+  token: string;
+  historyKey: string;
+  lockKey: string;
+  eventKey: string;
+};
+
+export type ClaimStatus = 'claimed' | 'duplicate' | 'busy';
+
+export type RedisMemoryOptions = {
+  url: string;
+  accountId: string;
+  session: string;
+  maxMessages?: number;
+  historyTtlSeconds?: number;
+  eventTtlSeconds?: number;
+  lockMs?: number;
+};
+
 // All keys for one chat share a Redis Cluster hash slot.
 const claimScript = `
   if redis.call('EXISTS', KEYS[1]) == 1 then return 'duplicate' end
@@ -25,13 +49,21 @@ const releaseScript = `
   return 0
 `;
 
-function digest(value) {
+function digest(value: unknown): string {
   return createHash('sha256').update(JSON.stringify(value)).digest('hex');
 }
 
 export class RedisMemory {
+  private readonly accountId: string;
+  private readonly session: string;
+  private readonly maxMessages: number;
+  private readonly historyTtlSeconds: number;
+  private readonly eventTtlSeconds: number;
+  private readonly lockMs: number;
+  private readonly redis: Redis;
+
   constructor({ url, accountId, session, maxMessages = 10,
-    historyTtlSeconds = 2_592_000, eventTtlSeconds = 604_800, lockMs = 120_000 }) {
+    historyTtlSeconds = 2_592_000, eventTtlSeconds = 604_800, lockMs = 120_000 }: RedisMemoryOptions) {
     this.accountId = accountId;
     this.session = session;
     this.maxMessages = maxMessages;
@@ -50,22 +82,25 @@ export class RedisMemory {
     this.redis.on('error', function () { console.error('Redis connection error'); });
   }
 
-  async connect() {
+  async connect(): Promise<void> {
     await this.redis.connect();
   }
 
-  async healthy() {
+  async healthy(): Promise<boolean> {
     return await this.redis.ping() === 'PONG';
   }
 
-  async close() {
+  async close(): Promise<void> {
     this.redis.disconnect();
   }
 
-  async claim(chatId, messageId) {
+  async claim(chatId: string, messageId: string): Promise<{
+    status: ClaimStatus;
+    claim: ConversationClaim;
+  }> {
     const chatHash = digest([this.accountId, this.session, chatId]);
     const prefix = `waha-ai:v1:{${chatHash}}`;
-    const claim = {
+    const claim: ConversationClaim = {
       token: randomUUID(),
       historyKey: `${prefix}:history`,
       lockKey: `${prefix}:lock`,
@@ -73,21 +108,21 @@ export class RedisMemory {
     };
     const status = await this.redis.eval(claimScript, 2,
       claim.eventKey, claim.lockKey, claim.token, this.lockMs);
-    return { status: status, claim: claim };
+    return { status: status as ClaimStatus, claim: claim };
   }
 
-  async history(claim) {
+  async history(claim: ConversationClaim): Promise<ChatMessage[]> {
     const messages = await this.redis.lrange(claim.historyKey, -this.maxMessages, -1);
-    return messages.map(function (message) { return JSON.parse(message); });
+    return messages.map(function (message): ChatMessage { return JSON.parse(message) as ChatMessage; });
   }
 
-  async assertOwner(claim) {
+  async assertOwner(claim: ConversationClaim): Promise<void> {
     if (await this.redis.get(claim.lockKey) !== claim.token) {
       throw new Error('Conversation lease expired');
     }
   }
 
-  async complete(claim, userText, replyText) {
+  async complete(claim: ConversationClaim, userText: string, replyText: string): Promise<void> {
     const result = await this.redis.eval(completeScript, 3,
       claim.lockKey, claim.historyKey, claim.eventKey, claim.token,
       JSON.stringify({ role: 'user', content: userText }),
@@ -98,7 +133,7 @@ export class RedisMemory {
     }
   }
 
-  async release(claim) {
+  async release(claim: ConversationClaim): Promise<void> {
     await this.redis.eval(releaseScript, 1, claim.lockKey, claim.token);
   }
 }

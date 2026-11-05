@@ -1,6 +1,6 @@
 # WAHA AI reply service
 
-This service receives WAHA `message` webhooks, calls an OpenAI-compatible model,
+This Bun + TypeScript service receives WAHA `message` webhooks, calls an OpenAI-compatible model,
 and sends the reply back through WAHA. Conversation history, event de-duplication,
 and per-chat locking are stored in Redis so multiple replicas can share state.
 
@@ -9,9 +9,12 @@ and per-chat locking are stored in Redis so multiple replicas can share state.
 Copy `.env.example` to `.env`, fill in the WAHA, model, and webhook values, then run:
 
 ```sh
+cp .env.example .env
 docker compose up -d --build
 curl http://127.0.0.1:3001/healthz
 ```
+
+The application runs inside the Docker container with `bun run server.ts`.
 
 The included Redis service stores data in the `waha-ai_redis-data` Docker volume.
 
