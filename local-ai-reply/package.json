@@ -1,0 +1,17 @@
+{
+  "name": "waha-local-ai-reply",
+  "version": "1.0.0",
+  "scripts": {
+    "test": "node --test test/*.test.mjs",
+    "start": "node server.mjs"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "Apache-2.0",
+  "description": "WhatsApp AI replies with shared Redis conversation memory",
+  "type": "module",
+  "private": true,
+  "dependencies": {
+    "ioredis": "^5.11.1"
+  }
+}
