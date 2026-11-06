@@ -1,5 +1,22 @@
 name: waha-ai
 services:
+  waha:
+    build:
+      context: .
+      dockerfile: Dockerfile.waha
+    image: waha-dashboard-fix:2026.10.1
+    restart: unless-stopped
+    ports:
+      - "${WAHA_PORT:-3000}:3000"
+    volumes:
+      - waha-sessions:/app/.sessions
+      - waha-media:/app/.media
+    env_file:
+      - .env.waha
+    depends_on:
+      ai:
+        condition: service_healthy
+
   ai:
     build: .
     restart: unless-stopped
@@ -8,8 +25,6 @@ services:
       PORT: "3001"
     ports:
       - "127.0.0.1:${AI_PORT:-3001}:3001"
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
     healthcheck:
       test: ["CMD", "bun", "--eval", "fetch('http://127.0.0.1:3001/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
       interval: 15s
@@ -31,3 +46,5 @@ services:
       retries: 10
 volumes:
   redis-data:
+  waha-sessions:
+  waha-media:

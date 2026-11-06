@@ -1,4 +1,5 @@
 .env
+.env.waha
 node_modules
 test
 README.md
